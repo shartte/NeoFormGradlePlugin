@@ -20,6 +20,8 @@ public class NeoFormWorkspacePlugin implements Plugin<Project> {
         var tasks = project.getTasks();
         tasks.withType(JavaCompile.class).configureEach(task -> {
             Collections.addAll(task.getOptions().getCompilerArgs(), "-Xmaxerrs", "9999");
+            // There are just too many, and we use a lot of raw casts to fix compile errors.
+            task.getOptions().setWarnings(false);
         });
 
         var neoForm = NeoFormExtension.fromProject(project);
