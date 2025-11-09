@@ -2,6 +2,7 @@ package net.neoforged.neoform;
 
 import net.neoforged.neoform.dsl.NeoFormExtension;
 import net.neoforged.neoform.tasks.CreatePatchWorkspace;
+import net.neoforged.neoform.tasks.CreatePatches;
 import net.neoforged.neoform.tasks.Decompile;
 import net.neoforged.neoform.tasks.DownloadVersionArtifact;
 import net.neoforged.neoform.tasks.DownloadVersionManifest;
@@ -11,8 +12,9 @@ import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Dependency;
-import org.gradle.api.attributes.Attribute;
+import org.gradle.api.artifacts.dsl.DependencyFactory;
 import org.gradle.api.file.Directory;
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.initialization.Settings;
 import org.gradle.api.initialization.resolve.RepositoriesMode;
@@ -105,6 +107,7 @@ public class NeoFormPlugin implements Plugin<Object> {
 
         var neoForm = (NeoFormExtension) project.getGradle().getExtensions().getByName("neoForm");
         var tasks = project.getTasks();
+        var dependencyFactory = project.getDependencyFactory();
         var configurations = project.getConfigurations();
         var buildDir = project.getLayout().getBuildDirectory();
         var inputsDir = buildDir.dir("neoform/inputs");
@@ -155,18 +158,24 @@ public class NeoFormPlugin implements Plugin<Object> {
         // Decompile
         //////////////////////////////////////////////////////////////////////////////////////////////////////////////
         var decompilerToolConfiguration = configurations.dependencyScope("decompilerTool", spec -> {
-            var dependencyFactory = project.getDependencyFactory();
-            var classpath = neoForm.getDecompiler().getClasspath();
-            spec.getDependencies().addAllLater(classpath.map(notations -> {
-                var result = new ArrayList<Dependency>(notations.size());
-                for (var notation : notations) {
-                    result.add(dependencyFactory.create(notation));
-                }
-                return result;
+            spec.setDescription("The executable jar containing the decompiler. May only resolve to a single file.");
+            spec.getDependencies().addLater(neoForm.getDecompiler().getToolDependency().map(notation -> {
+                return createDependency(dependencyFactory, notation);
             }));
         });
         var decompilerToolClasspath = configurations.resolvable("decompilerToolClasspath", spec -> {
             spec.extendsFrom(decompilerToolConfiguration.get());
+        });
+        var decompilerPluginsConfiguration = configurations.dependencyScope("decompilerPlugins", spec -> {
+            spec.setDescription("Additional jars containing plugins for the decompiler.");
+            spec.getDependencies().addAllLater(neoForm.getDecompiler().getPluginDependencies().map(notations -> {
+                return new ArrayList<>(
+                        notations.stream().map(notation -> createDependency(dependencyFactory, notation)).toList()
+                );
+            }));
+        });
+        var decompilerPluginsClasspath = configurations.resolvable("decompilerPluginsClasspath", spec -> {
+            spec.extendsFrom(decompilerPluginsConfiguration.get());
         });
 
         var minecraftLibrariesClasspath = MinecraftLibraries.createConfiguration(project);
@@ -174,12 +183,15 @@ public class NeoFormPlugin implements Plugin<Object> {
         var decompile = tasks.register("decompile", Decompile.class, task -> {
             task.getInput().set(prepareJarForDecompiler.flatMap(PrepareJarForDecompiler::getOutput));
             task.getToolClasspath().from(decompilerToolClasspath);
+            task.getPluginsClasspath().from(decompilerPluginsClasspath);
             task.getInputClasspath().from(minecraftLibrariesClasspath);
+            task.getJvmArgs().set(neoForm.getDecompiler().getJvmArgs());
+            task.getArgs().set(neoForm.getDecompiler().getArgs());
             task.getOutput().set(prefixFilenameWithVersion(neoForm, inputsDir, "sources.zip"));
         });
 
         //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        // Decompile
+        // Workflow Tasks
         //////////////////////////////////////////////////////////////////////////////////////////////////////////////
         var createPatchWorkspace = tasks.register("createPatchWorkspace", CreatePatchWorkspace.class, task -> {
             task.setGroup("neoform");
@@ -187,6 +199,31 @@ public class NeoFormPlugin implements Plugin<Object> {
             task.getSourcesZip().set(decompile.flatMap(Decompile::getOutput));
             task.getWorkspace().set(project.getLayout().getProjectDirectory().dir("workspace"));
         });
+        var createPatchWorkspaceForUpdate = tasks.register("createPatchWorkspaceForUpdate", CreatePatchWorkspace.class, task -> {
+            task.setGroup("neoform");
+            task.getPatchesDir().set(project.getLayout().getProjectDirectory().dir("src/patches"));
+            task.getSourcesZip().set(decompile.flatMap(Decompile::getOutput));
+            task.getWorkspace().set(project.getLayout().getProjectDirectory().dir("workspace"));
+            task.getUpdateMode().set(true);
+        });
+        var createPatches = tasks.register("createPatches", CreatePatches.class, task -> {
+            task.setGroup("neoform");
+            task.getPatchesDir().set(project.getLayout().getProjectDirectory().dir("src/patches"));
+            task.getSourcesZip().set(decompile.flatMap(Decompile::getOutput));
+            task.getModifiedSources().set(project.getLayout().getProjectDirectory().dir("workspace/src/main/java"));
+        });
+    }
+
+    private static Dependency createDependency(DependencyFactory dependencyFactory, Object notation) {
+        if (notation instanceof CharSequence charSequence) {
+            return dependencyFactory.create(charSequence);
+        } else if (notation instanceof Project project) {
+            return dependencyFactory.create(project);
+        } else if (notation instanceof FileCollection files) {
+            return dependencyFactory.create(files);
+        } else {
+            throw new InvalidUserCodeException("Invalid dependency notation: " + notation);
+        }
     }
 
     private static Provider<RegularFile> prefixFilenameWithVersion(NeoFormExtension neoForm, Provider<Directory> dirProvider, String suffix) {

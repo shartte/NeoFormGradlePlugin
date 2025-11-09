@@ -71,6 +71,7 @@ public abstract class DownloadVersionManifest extends DefaultTask {
             versionManifestUrl = version.get().url().toString();
         }
 
+        action.overwrite(false);
         action.src(versionManifestUrl);
 
         // Supported zipped version manifests (for weird unobfuscated versions)
