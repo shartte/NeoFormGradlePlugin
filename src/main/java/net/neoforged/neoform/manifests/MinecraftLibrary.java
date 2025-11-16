@@ -15,20 +15,7 @@ public record MinecraftLibrary(@SerializedName("name") String artifactId, Downlo
     }
 
     public boolean rulesMatch() {
-        if (rules.isEmpty()) {
-            return true;
-        }
-
-        for (Rule rule : rules) {
-            var ruleApplies = rule.evaluate();
-            if (!ruleApplies && rule.action() == RuleAction.ALLOWED) {
-                return false;
-            } else if (ruleApplies && rule.action() == RuleAction.DISALLOWED) {
-                return false;
-            }
-        }
-
-        return true;
+        return Rule.rulesMatch(rules);
     }
 
     @Nullable

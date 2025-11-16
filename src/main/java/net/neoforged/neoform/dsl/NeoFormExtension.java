@@ -16,7 +16,15 @@ import java.util.List;
 public abstract class NeoFormExtension {
     private static final Logger LOG = LoggerFactory.getLogger(NeoFormExtension.class);
 
-    private final DecompilerSettings decompiler;
+    /**
+     * Settings for the tool used to pre-process the jar file.
+     */
+    private final ToolSettings preProcessJar;
+
+    /**
+     * Settings for the tool used to decompile the pre-processed jar.
+     */
+    private final ToolSettings decompiler;
 
     public static NeoFormExtension fromProject(Project project) {
         return (NeoFormExtension) project.getGradle().getExtensions().getByName("neoForm");
@@ -42,19 +50,30 @@ public abstract class NeoFormExtension {
         // Derive the Minecraft version from the branch name by default.
         getMinecraftVersion().convention(getCurrentBranchName().map(NeoFormExtension::getVersionFromBranchName));
 
+        getMinecraftAssetsVersion().convention(getMinecraftVersion());
+
         getMinecraftDependencies().convention(getMinecraftVersion().map(minecraftVersion -> {
             return new ArrayList<>(List.of("net.neoforged:minecraft-dependencies:" + minecraftVersion));
         }));
 
-        decompiler = objects.newInstance(DecompilerSettings.class);
+        preProcessJar = objects.newInstance(ToolSettings.class);
+        decompiler = objects.newInstance(ToolSettings.class);
     }
 
-    public DecompilerSettings getDecompiler() {
+    public ToolSettings getDecompiler() {
         return decompiler;
     }
 
-    public void decompiler(Action<? super DecompilerSettings> action) {
+    public void decompiler(Action<? super ToolSettings> action) {
         action.execute(decompiler);
+    }
+
+    public ToolSettings getPreProcessJar() {
+        return preProcessJar;
+    }
+
+    public void preProcessJar(Action<? super ToolSettings> action) {
+        action.execute(preProcessJar);
     }
 
     private static String getVersionFromBranchName(String branchName) {
@@ -69,6 +88,11 @@ public abstract class NeoFormExtension {
 
     public abstract Property<String> getMinecraftVersion();
 
+    /**
+     * The Minecraft version to use the assets from. Defaults to {@link #getMinecraftVersion()}.
+     */
+    public abstract Property<String> getMinecraftAssetsVersion();
+
     public abstract ListProperty<String> getMinecraftDependencies();
 
     public abstract Property<String> getMinecraftVersionManifestUrl();
@@ -76,4 +100,6 @@ public abstract class NeoFormExtension {
     public abstract ListProperty<String> getAdditionalCompileDependencies();
 
     public abstract ListProperty<String> getAdditionalRuntimeDependencies();
+
+    public abstract Property<String> getJavaVersion();
 }

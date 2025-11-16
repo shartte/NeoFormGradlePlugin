@@ -29,7 +29,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-
+/**
+ * This task compares the modified sources in the workspace against the original source zip produced
+ * by the decompiler, and updates the patches stored in the src/patches directory accordingly.
+ */
 public abstract class CreatePatches extends DefaultTask {
     @InputFile
     public abstract RegularFileProperty getSourcesZip();
@@ -45,22 +48,9 @@ public abstract class CreatePatches extends DefaultTask {
         // Let it create a folder in the temp dir
         var patchesDir = getTemporaryDir().toPath().resolve("patches");
 
-        var baseSourcesZip = new File(getTemporaryDir(), "base_sources.zip");
         // Build a zip for DiffPatch with only the .java files, otherwise it tries to remove the resources
-        try (var zip = new ZipFile(getSourcesZip().getAsFile().get());
-             var zipOut = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(baseSourcesZip)))) {
-            var entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                var entry = entries.nextElement();
-                if (entry.getName().endsWith(".java")) {
-                    zipOut.putNextEntry(entry);
-                    try (var in = zip.getInputStream(entry)) {
-                        in.transferTo(zipOut);
-                    }
-                    zipOut.closeEntry();
-                }
-            }
-        }
+        var baseSourcesZip = new File(getTemporaryDir(), "base_sources.zip");
+        buildJavaSourceZip(getSourcesZip().getAsFile().get(), baseSourcesZip);
 
         var builder = DiffOperation.builder()
                 .logTo(getLogger()::lifecycle)
@@ -81,8 +71,11 @@ public abstract class CreatePatches extends DefaultTask {
             throw new GradleException("DiffPatch failed with exit code: " + exit);
         }
 
-        // Only when successful, replace the patches dir
-        var patchesDestination = getPatchesDir().getAsFile().get().toPath();
+        // Only when successful, update the patches source dir
+        updatePatchesInSourceDir(patchesDir, getPatchesDir().getAsFile().get().toPath());
+    }
+
+    private void updatePatchesInSourceDir(Path patchesDir, Path patchesDestination) throws IOException {
         var addedFolders = new HashSet<Path>();
         var patchesWritten = new HashSet<Path>();
         var newPatches = new AtomicInteger();
@@ -149,5 +142,22 @@ public abstract class CreatePatches extends DefaultTask {
 
         getLogger().lifecycle("Patches added: {}, modified: {}, deleted: {}, unchanged: {}",
                 newPatches.get(), modifiedPatches.get(), removedPatches.get(), unchangedPatches.get());
+    }
+
+    private static void buildJavaSourceZip(File fullSourceZip, File javaSourceZip) throws IOException {
+        try (var zip = new ZipFile(fullSourceZip);
+             var zipOut = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(javaSourceZip)))) {
+            var entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (entry.getName().endsWith(".java")) {
+                    zipOut.putNextEntry(entry);
+                    try (var in = zip.getInputStream(entry)) {
+                        in.transferTo(zipOut);
+                    }
+                    zipOut.closeEntry();
+                }
+            }
+        }
     }
 }

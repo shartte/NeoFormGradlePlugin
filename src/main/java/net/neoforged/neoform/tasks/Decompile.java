@@ -5,6 +5,7 @@ import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
@@ -39,11 +40,11 @@ public abstract class Decompile extends DefaultTask {
     @OutputFile
     public abstract RegularFileProperty getOutput();
 
-    @Classpath
-    public abstract ConfigurableFileCollection getToolClasspath();
+    @Input
+    public abstract Property<String> getMainClass();
 
     @Classpath
-    public abstract ConfigurableFileCollection getPluginsClasspath();
+    public abstract ConfigurableFileCollection getClasspath();
 
     @Classpath
     public abstract ConfigurableFileCollection getInputClasspath();
@@ -66,20 +67,10 @@ public abstract class Decompile extends DefaultTask {
             }
         }
 
-        var mainJar = getToolClasspath().getSingleFile();
-        String mainClass;
-        try (var jarFile = new JarFile(mainJar)) {
-            mainClass = jarFile.getManifest().getMainAttributes().getValue("Main-Class");
-        }
-
-        if (mainClass == null) {
-            throw new GradleException("Decompiler tool jar is not executable: " + mainJar);
-        }
-
         try (var output = new BufferedOutputStream(Files.newOutputStream(logFile))) {
             exec.javaexec(spec -> {
-                spec.classpath(getToolClasspath(), getPluginsClasspath());
-                spec.getMainClass().set(mainClass);
+                spec.classpath(getClasspath());
+                spec.getMainClass().set(getMainClass());
                 spec.jvmArgs(getJvmArgs().get());
                 spec.args(getArgs().get());
                 spec.args("--log-level=WARN");
@@ -92,12 +83,9 @@ public abstract class Decompile extends DefaultTask {
                 var writer = new OutputStreamWriter(output, StandardCharsets.UTF_8);
                 try {
                     writer.append("Running Decompiler using:\n");
-                    writer.append(" Tool Classpath:\n");
-                    for (var file : getToolClasspath()) {
-                        writer.append("  - ").append(file.getAbsolutePath()).append('\n');
-                    }
-                    writer.append(" Plugin Classpath:\n");
-                    for (var file : getPluginsClasspath()) {
+                    writer.append(" Main Class: ").append(getMainClass().get()).append('\n');
+                    writer.append(" Classpath:\n");
+                    for (var file : getClasspath()) {
                         writer.append("  - ").append(file.getAbsolutePath()).append('\n');
                     }
                     writer.append(" JVM Args:\n");
