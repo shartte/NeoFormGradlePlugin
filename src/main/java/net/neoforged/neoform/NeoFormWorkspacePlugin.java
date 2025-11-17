@@ -6,10 +6,11 @@ import net.neoforged.neoform.dsl.NeoFormExtension;
 import net.neoforged.neoform.tasks.DownloadVersionManifest;
 import net.neoforged.neoform.tasks.GenerateRunClientClass;
 import net.neoforged.nfrtgradle.DownloadAssets;
+import net.neoforged.nfrtgradle.NeoFormRuntimeExtension;
+import net.neoforged.nfrtgradle.NeoFormRuntimePlugin;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Dependency;
-import org.gradle.api.attributes.Bundling;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.JavaExec;
@@ -22,6 +23,7 @@ import java.util.Collections;
 public class NeoFormWorkspacePlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
+        project.getPlugins().apply(NeoFormRuntimePlugin.class);
         project.getPlugins().apply(JavaPlugin.class);
         project.getPlugins().apply(MinecraftDependenciesPlugin.class);
 
@@ -29,14 +31,13 @@ public class NeoFormWorkspacePlugin implements Plugin<Project> {
         var tasks = project.getTasks();
         var configurations = project.getConfigurations();
         var sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
+        var neoForm = NeoFormExtension.fromProject(project);
 
         tasks.withType(JavaCompile.class).configureEach(task -> {
             Collections.addAll(task.getOptions().getCompilerArgs(), "-Xmaxerrs", "9999");
             // There are just too many, and we use a lot of raw casts to fix compile errors.
-            task.getOptions().setWarnings(false);
+            task.getOptions().getCompilerArgs().addAll(neoForm.getJavaCompilerOptions().get());
         });
-
-        var neoForm = NeoFormExtension.fromProject(project);
 
         var dependencyFactory = project.getDependencyFactory();
         configurations.named("implementation").configure(spec -> {
@@ -70,18 +71,6 @@ public class NeoFormWorkspacePlugin implements Plugin<Project> {
             }));
         });
 
-        var neoFormRuntimeTool = configurations.dependencyScope("neoFormRuntimeTool", spec -> {
-            spec.setDescription("Dependency scope for the NeoFormRuntime tool.");
-            spec.defaultDependencies(dependencies -> {
-                dependencies.add(dependencyFactory.create("net.neoforged:neoform-runtime:1.0.43"));
-            });
-        });
-        var neoFormRuntimeToolClasspath = configurations.resolvable("neoFormRuntimeToolClasspath", spec -> {
-            spec.setDescription("Runtime classpath for the NeoFormRuntime tool.");
-            spec.extendsFrom(neoFormRuntimeTool.get());
-            spec.getAttributes().attribute(Bundling.BUNDLING_ATTRIBUTE, project.getObjects().named(Bundling.class, Bundling.SHADOWED));
-        });
-
         // Create the machinery to download assets and announce their availability
         // through a file on the classpath to the startup class.
         var mainSourceSet = sourceSets.named(SourceSet.MAIN_SOURCE_SET_NAME);
@@ -106,10 +95,8 @@ public class NeoFormWorkspacePlugin implements Plugin<Project> {
         var downloadAssets = tasks.register("downloadAssets", DownloadAssets.class, task -> {
             task.setGroup("neoform/internal");
             task.setDescription("Download the client-side assets to be able to run the game.");
+            task.getMinecraftVersion().set(neoForm.getMinecraftVersion());
 
-            task.getVerbose().set(false);
-            task.getNeoFormRuntime().from(neoFormRuntimeToolClasspath);
-            task.getMinecraftVersion().set(neoForm.getMinecraftAssetsVersion());
             task.getAssetPropertiesFile().set(assetsResourceDir.map(dir -> dir.file("neoform_assets.properties")));
             task.getOutputs().dir(assetsResourceDir);
         });
@@ -117,7 +104,7 @@ public class NeoFormWorkspacePlugin implements Plugin<Project> {
         var downloadManifest = tasks.register("downloadVersionManifest", DownloadVersionManifest.class, task -> {
             task.setGroup("neoform/internal");
             task.getMinecraftVersion().set(neoForm.getMinecraftVersion());
-            task.getVersionManifestUrl().set(neoForm.getMinecraftVersionManifestUrl());
+            task.getLauncherManifestUrl().set(neoForm.getMinecraftLauncherManifestUrl());
             task.getOutput().set(project.getLayout().getBuildDirectory().file("minecraft_version.json"));
         });
         var versionManifest = downloadManifest.flatMap(DownloadVersionManifest::getOutput);

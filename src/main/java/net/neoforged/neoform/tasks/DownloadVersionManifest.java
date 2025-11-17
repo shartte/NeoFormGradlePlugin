@@ -36,10 +36,6 @@ public abstract class DownloadVersionManifest extends DefaultTask {
     @Input
     public abstract Property<String> getLauncherManifestUrl();
 
-    @Input
-    @Optional
-    public abstract Property<String> getVersionManifestUrl();
-
     @OutputFile
     public abstract RegularFileProperty getOutput();
 
@@ -53,23 +49,20 @@ public abstract class DownloadVersionManifest extends DefaultTask {
     @TaskAction
     public void download() throws IOException, ExecutionException, InterruptedException {
 
-        var versionManifestUrl = getVersionManifestUrl().getOrNull();
-        if (versionManifestUrl == null) {
-            // Download the launcher manifest and grab the version from it
-            var minecraftVersion = getMinecraftVersion().get();
+        // Download the launcher manifest and grab the version from it
+        var minecraftVersion = getMinecraftVersion().get();
 
-            var launcherManifestFile = new File(getTemporaryDir(), "launcher_manifest.json");
-            launcherManifestAction.src(getLauncherManifestUrl());
-            launcherManifestAction.dest(launcherManifestFile);
-            launcherManifestAction.execute().get();
+        var launcherManifestFile = new File(getTemporaryDir(), "launcher_manifest.json");
+        launcherManifestAction.src(getLauncherManifestUrl());
+        launcherManifestAction.dest(launcherManifestFile);
+        launcherManifestAction.execute().get();
 
-            var launcherManifest = LauncherManifest.from(launcherManifestFile.toPath());
-            var version = launcherManifest.versions().stream().filter(v -> v.id().equals(minecraftVersion)).findFirst();
-            if (version.isEmpty()) {
-                throw new InvalidUserCodeException("Minecraft version " + minecraftVersion + " does not exist in the launcher manifest at " + getLauncherManifestUrl().get());
-            }
-            versionManifestUrl = version.get().url().toString();
+        var launcherManifest = LauncherManifest.from(launcherManifestFile.toPath());
+        var version = launcherManifest.versions().stream().filter(v -> v.id().equals(minecraftVersion)).findFirst();
+        if (version.isEmpty()) {
+            throw new InvalidUserCodeException("Minecraft version " + minecraftVersion + " does not exist in the launcher manifest at " + getLauncherManifestUrl().get());
         }
+        var versionManifestUrl = version.get().url().toString();
 
         action.overwrite(false);
         action.src(versionManifestUrl);

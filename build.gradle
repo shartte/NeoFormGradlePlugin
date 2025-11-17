@@ -10,6 +10,17 @@ repositories {
     mavenCentral()
     gradlePluginPortal()
     maven { url = 'https://maven.neoforged.net/releases/'}
+    maven {
+        name = "Maven for PR #300" // https://github.com/neoforged/ModDevGradle/pull/300
+        url = uri("https://prmaven.neoforged.net/ModDevGradle/pr300")
+        content {
+            includeModule("net.neoforged.moddev.legacyforge", "net.neoforged.moddev.legacyforge.gradle.plugin")
+            includeModule("net.neoforged.moddev.legacyforge.repositories", "net.neoforged.moddev.legacyforge.repositories.gradle.plugin")
+            includeModule("net.neoforged.moddev", "net.neoforged.moddev.gradle.plugin")
+            includeModule("net.neoforged.moddev.repositories", "net.neoforged.moddev.repositories.gradle.plugin")
+            includeModule("net.neoforged", "moddev-gradle")
+        }
+    }
 }
 
 dependencies {
@@ -18,14 +29,14 @@ dependencies {
     implementation 'io.codechicken:DiffPatch:2.0.0.34'
 
     implementation 'org.gradle.toolchains.foojay-resolver-convention:org.gradle.toolchains.foojay-resolver-convention.gradle.plugin:1.0.0'
-    implementation 'net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.116'
+    implementation 'net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.121-pr-300-launcher-meta-uri-support'
 }
 
 gradlePlugin {
     plugins {
         neoFormPlugin {
             id = 'net.neoforged.neoform'
-            implementationClass = 'net.neoforged.neoform.NeoFormPlugin'
+            implementationClass = 'net.neoforged.neoform.NeoFormSettingsPlugin'
         }
     }
 }

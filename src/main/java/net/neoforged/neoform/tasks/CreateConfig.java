@@ -9,16 +9,15 @@ import net.neoforged.neoform.dsl.ToolSettings;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.InvalidUserCodeException;
 import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,10 +30,14 @@ public abstract class CreateConfig extends DefaultTask {
     public abstract RegularFileProperty getOutput();
 
     @Input
-    public abstract Property<String> getVersion();
+    public abstract Property<String> getMinecraftVersion();
 
     @Input
-    public abstract Property<String> getJavaVersion();
+    @Optional
+    public abstract Property<String> getMinecraftVersionManifestUrl();
+
+    @Input
+    public abstract Property<Integer> getJavaVersion();
 
     @Input
     public abstract Property<String> getEncoding();
@@ -45,6 +48,12 @@ public abstract class CreateConfig extends DefaultTask {
     @Input
     public abstract Property<ToolSettings> getPreProcessJar();
 
+    @Input
+    public abstract ListProperty<String> getAdditionalCompileDependencies();
+
+    @Input
+    public abstract ListProperty<String> getAdditionalRuntimeDependencies();
+
     @TaskAction
     public void createConfig() throws IOException {
         // Build steps definitions
@@ -54,13 +63,13 @@ public abstract class CreateConfig extends DefaultTask {
         steps.add(createStep("downloadClient", Map.of("json", "{downloadJsonOutput}")));
         steps.add(createStep("downloadServer", Map.of("json", "{downloadJsonOutput}")));
         steps.add(createStep("listLibraries", Map.of("json", "{downloadJsonOutput}")));
-        steps.add(createStep("processJar", Map.of(
+        steps.add(createStep("preProcessJar", Map.of(
                 "inputClient", "{downloadClientOutput}",
                 "inputServer", "{downloadServerOutput}"
         )));
         steps.add(createStep("decompile", Map.of(
                 "libraries", "{listLibrariesOutput}",
-                "input", "{renameOutput}"
+                "input", "{preProcessJarOutput}"
         )));
         steps.add(createStep("patch", Map.of("input", "{decompileOutput}")));
 
@@ -72,7 +81,7 @@ public abstract class CreateConfig extends DefaultTask {
         // Build final JSON
         var root = new JsonObject();
         root.addProperty("spec", 5);
-        root.addProperty("version", getVersion().get());
+        root.addProperty("version", getMinecraftVersion().get());
         root.addProperty("java_target", getJavaVersion().get());
         root.addProperty("encoding", getEncoding().get());
 
@@ -80,9 +89,13 @@ public abstract class CreateConfig extends DefaultTask {
         data.addProperty("patches", "patches/");
         root.add("data", data);
 
-        root.add("steps", GSON.toJsonTree(steps));
+        root.add("steps", wrapJoined(steps));
         root.add("functions", functionsDef);
-        // TODO root.add("libraries", GSON.toJsonTree(config.get("libraries")));
+
+        var libraries = new JsonArray();
+        getAdditionalCompileDependencies().get().forEach(libraries::add);
+        getAdditionalRuntimeDependencies().get().forEach(libraries::add);
+        root.add("libraries", wrapJoined(libraries));
 
         // Write to file
         try (var writer = Files.newBufferedWriter(getOutput().get().getAsFile().toPath())) {
@@ -105,15 +118,7 @@ public abstract class CreateConfig extends DefaultTask {
 
     private static JsonElement createFunction(ToolSettings settings) {
         var function = new JsonObject();
-        function.addProperty("main_class", settings.getMainClass().get());
-        var classpath = new JsonArray();
-        for (var notation : settings.getClasspath().get()) {
-            if (!(notation instanceof String notationString)) {
-                throw new InvalidUserCodeException("Can only use strings for classpath: " + notation);
-            }
-            classpath.add(notationString);
-        }
-        function.add("classpath", classpath);
+        function.addProperty("version", settings.getVersion().get());
         var args = new JsonArray();
         for (String entry : settings.getArgs().get()) {
             args.add(entry);
@@ -131,5 +136,11 @@ public abstract class CreateConfig extends DefaultTask {
             function.addProperty("java_version", settings.getJavaVersion().get());
         }
         return function;
+    }
+
+    private static JsonElement wrapJoined(JsonElement element) {
+        var wrapper = new JsonObject();
+        wrapper.add("joined", element);
+        return wrapper;
     }
 }

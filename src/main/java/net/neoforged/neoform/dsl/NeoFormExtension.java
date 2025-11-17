@@ -50,14 +50,26 @@ public abstract class NeoFormExtension {
         // Derive the Minecraft version from the branch name by default.
         getMinecraftVersion().convention(getCurrentBranchName().map(NeoFormExtension::getVersionFromBranchName));
 
-        getMinecraftAssetsVersion().convention(getMinecraftVersion());
-
         getMinecraftDependencies().convention(getMinecraftVersion().map(minecraftVersion -> {
             return new ArrayList<>(List.of("net.neoforged:minecraft-dependencies:" + minecraftVersion));
         }));
 
         preProcessJar = objects.newInstance(ToolSettings.class);
+        preProcessJar.getJavaVersion().convention(getJavaVersion());
         decompiler = objects.newInstance(ToolSettings.class);
+        decompiler.getJavaVersion().convention(getJavaVersion());
+
+        getJavaCompilerOptions().convention(new ArrayList<>(List.of(
+                "-nowarn",
+                "-Xlint:none",
+                // These also need to be disabled explicitly to remove some additional warnings
+                "-Xlint:-unchecked",
+                "-Xlint:-deprecation",
+                "-Xlint:-rawtypes",
+                "-Xlint:-removal"
+        )));
+
+        getNeoFormRuntimeVersion().set("1.0.45-pr-93-remove-hard-coding");
     }
 
     public ToolSettings getDecompiler() {
@@ -84,22 +96,27 @@ public abstract class NeoFormExtension {
         return null;
     }
 
+    public abstract Property<String> getMinecraftLauncherManifestUrl();
+
     protected abstract Property<String> getCurrentBranchName();
 
     public abstract Property<String> getMinecraftVersion();
 
-    /**
-     * The Minecraft version to use the assets from. Defaults to {@link #getMinecraftVersion()}.
-     */
-    public abstract Property<String> getMinecraftAssetsVersion();
-
     public abstract ListProperty<String> getMinecraftDependencies();
-
-    public abstract Property<String> getMinecraftVersionManifestUrl();
 
     public abstract ListProperty<String> getAdditionalCompileDependencies();
 
     public abstract ListProperty<String> getAdditionalRuntimeDependencies();
 
-    public abstract Property<String> getJavaVersion();
+    public abstract Property<Integer> getJavaVersion();
+
+    /**
+     * Additional, sensible compiler options to pass to javac when recompiling Minecraft.
+     */
+    public abstract ListProperty<String> getJavaCompilerOptions();
+
+    /**
+     * NeoFormRuntime artifact to use, this will default to the version used by MDG if not set.
+     */
+    public abstract Property<String> getNeoFormRuntimeVersion();
 }
